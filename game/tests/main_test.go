@@ -1,6 +1,7 @@
-package main
+package tests
 
 import (
+	"github.com/Japsty/99_hw/game/internal"
 	"testing"
 )
 
@@ -55,9 +56,9 @@ var game0cases = [][]gameCase{
 
 func TestGame0(t *testing.T) {
 	for caseNum, commands := range game0cases {
-		initGame()
+		internal.InitGame()
 		for _, item := range commands {
-			answer := handleCommand(item.command)
+			answer := internal.HandleCommand(item.command)
 			if answer != item.answer {
 				t.Error("case:", caseNum, item.step,
 					"\n\tcmd:", item.command,
