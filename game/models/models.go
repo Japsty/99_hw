@@ -4,13 +4,10 @@ import (
 	"strings"
 )
 
-type Text interface {
-	ToString() string
-}
-
 type World struct {
 	Rooms  []Room
 	Player Player
+	Step   int
 }
 
 type Player struct {
@@ -20,105 +17,163 @@ type Player struct {
 	Quests   []string  //Задания игрока
 }
 
+func NewPlayer(backpack *Backpack, location Room, quests []string) Player {
+	player := Player{
+		Backpack: backpack,
+		Location: location,
+		Quests:   quests,
+	}
+	return player
+}
+
+// Команда "осмотреться"
 func (p Player) Lookup() string {
 	var builder strings.Builder
-	if p.Location.Furniture == nil {
+	counter := 0
+	if len(p.Location.Furnitures) == 0 {
 		builder.WriteString("пустая комната. ")
+		return builder.String()
+	} else {
+		for key, items := range p.Location.Furnitures {
+			counter++
+			builder.WriteString("на ")
+			builder.WriteString(key)
+			builder.WriteString(": ")
+			for _, item := range items {
+				builder.WriteString(item.Title)
+				if counter == len(p.Location.Furnitures) {
+					builder.WriteString(". ")
+				} else {
+					builder.WriteString(", ")
+				}
+			}
+		}
 	}
 	builder.WriteString(p.Location.ToString())
 	return builder.String()
 }
 
-type Backpack struct {
-	basis Item
-	Items []Item //Перечень предметов в рюкзаке
-}
-
-func (p *Player) PutOn(item Item) string {
-	if item.Title == "рюкзак" {
-		p.Backpack = new(Backpack)
-		return "вы надели: рюкзак"
-	}
-	return "ну я хуй знает, рюкзак это или че"
-}
-
-func (p *Player) TakeItem(item Item) string {
-	if p.Backpack == nil {
-		return "некуда класть"
-	}
+// Команда "идти (комната)"
+func (p *Player) GoTo(RoomTitle string) string {
 	var builder strings.Builder
-	builder.WriteString("предмет добавлен в инвентарь: ")
-	builder.WriteString(item.Title)
-	if p.Location.Furniture != nil {
-
+	for key, room := range p.Location.Paths {
+		if key == RoomTitle && room.Locked == false {
+			p.Location = room
+			builder.WriteString(p.Location.Description)
+			builder.WriteString(p.Location.ToString())
+			return builder.String()
+		} else if key == RoomTitle && room.Locked == true {
+			builder.WriteString("дверь закрыта")
+			return builder.String()
+		}
 	}
-	p.Backpack.Items = append(p.Backpack.Items, item)
+	builder.WriteString("нет пути в ")
+	builder.WriteString(RoomTitle)
 	return builder.String()
+}
+
+// Команда "взять (предмет)"
+func (p *Player) TakeIt(ItemName string) string {
+	var builder strings.Builder
+	if p.Backpack.State == false {
+		builder.WriteString("некуда класть")
+		return builder.String()
+	}
+	for _, items := range p.Location.Furnitures {
+		for _, item := range items {
+			if item.Title == ItemName {
+				builder.WriteString("предмет добавлен в инвентарь: ")
+				builder.WriteString(item.Title)
+				return builder.String()
+			}
+		}
+	}
+	builder.WriteString("нет такого")
+	return builder.String()
+}
+
+// Команда "надеть (предмет)"
+func (p *Player) PutOn(ItemName string) string {
+	var builder strings.Builder
+	for _, items := range p.Location.Furnitures {
+		for _, item := range items {
+			if item.Title == ItemName {
+				if item.Title == "рюкзак" {
+					p.Backpack.State = true
+					p.Backpack.Title = item.Title
+				}
+				builder.WriteString("вы надели: ")
+				builder.WriteString(item.Title)
+				return builder.String()
+			}
+		}
+	}
+	builder.WriteString("нет такого")
+	return builder.String()
+}
+
+// Команда "применить (предмет) (мебель)"
+func (p *Player) Apply(ItemName string, FurnitureName string) string {
+	var builder strings.Builder
+	findItem := false
+	findFurniture := false
+	for key, items := range p.Backpack.Items {
+		if key == ItemName {
+			findItem = true
+		}
+	}
+	for key, _ := range p.Location.Furnitures {
+		if key == FurnitureName {
+			findFurniture = true
+		}
+	}
+	if findItem == true && findFurniture != true {
+		builder.WriteString("не к чему применить")
+	} else if findItem != true {
+		builder.WriteString("нет предмета в инвентаре - ")
+		builder.WriteString(ItemName)
+	}
+	return builder.String()
+}
+
+// Рюкзак как айтем и рюкзак на игроке - разные сущности
+type Backpack struct {
+	State bool            //состояние рюкзака
+	Title string          //название рюкзака
+	Items map[string]Item //Перечень предметов в рюкзаке
 }
 
 type Room struct {
-	Title       string      //Название комнаты
-	Description string      //Обстановка в комнате
-	Furniture   []Furniture //Мебель находящаяся в комнате
-	Doors       []Door      //Двери в комнате
+	Title       string            //Название комнаты
+	Description string            //Обстановка в комнате
+	Locked      bool              //Закрыта ли комната
+	Paths       map[string]Room   // Пути куда можно пройти
+	Furnitures  map[string][]Item //Мапа мебели
 }
 
-func (r *Room) ToString() string {
+func NewRoom(Title string, Description string, Locked bool, Paths map[string]Room, Furnitures map[string][]Item) Room {
+	room := Room{
+		Title:       Title,
+		Description: Description,
+		Locked:      Locked,
+		Paths:       Paths,
+		Furnitures:  Furnitures,
+	}
+	return room
+}
+
+// Выводит можно пройти - (перечень комнат в которые есть проход из данной комнаты)
+func (r Room) ToString() string {
 	var builder strings.Builder
 	builder.WriteString("можно пройти - ")
-	for idx, rooms := range r.Doors {
-		builder.WriteString(r.Title)
-		if idx < len(r.Doors)-1 {
-			builder.WriteString(", ")
-		} else {
-			builder.WriteString(" ")
+	counter := 0
+	for key := range r.Paths {
+		counter += 1
+		builder.WriteString(key)
+		if counter == len(r.Paths) {
+			return builder.String()
 		}
-	}
-	return builder.String()
-}
-
-type Door struct {
-	IsClosed     bool //Состояние двери (открыто/закрыто)
-	ItemToUnlock Item //Предмет требующиеся для открытия
-	RoomBeside   Room //Комната находящаяся за дверью
-}
-
-func (d *Door) Open(item Item) string {
-	var builder strings.Builder
-	if d.ItemToUnlock == item {
-		builder.WriteString("дверь открыта")
-		return builder.String()
-	}
-	builder.WriteString("нельзя применить")
-	return builder.String()
-}
-
-type Furniture struct {
-	Title string //Название Мебели
-	Items []Item //Предмета находящиеся на/в мебели
-}
-
-func (f Furniture) FindFurniture(furniture []Furniture) []Furniture {
-	fSlice := []Furniture{}
-	for i := 0; i < len(furniture); i++ {
-		fSlice = append(fSlice, furniture[i])
-	}
-	return fSlice
-}
-
-func (f *Furniture) ToString() string {
-	var builder strings.Builder
-	builder.WriteString("на")
-	builder.WriteString(" ")
-	builder.WriteString(f.Title)
-	builder.WriteString("е: ")
-	for idx, item := range f.Items {
-		builder.WriteString(item.ToString())
-		if idx < len(f.Items)-1 {
-			builder.WriteString(", ")
-		} else {
-			builder.WriteString(".")
-		}
+		builder.WriteString(", ")
 	}
 	return builder.String()
 }
@@ -126,9 +181,12 @@ func (f *Furniture) ToString() string {
 type Item struct {
 	Title   string //Название предмета
 	UseWith string //К чему можно применить предмет
-	Suffix  string //Окончание названия предмета при обращении
 }
 
-func (i Item) ToString() string {
-	return i.Title
+func NewItem(Title string, UseWith string) Item {
+	item := Item{
+		Title:   Title,
+		UseWith: UseWith,
+	}
+	return item
 }
